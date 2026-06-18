@@ -25,7 +25,7 @@ jobs:
         run: |
           # 替换 'my_folder' 为你要压缩的真实文件夹名称
           # 替换 'archive.zip' 为你期望的压缩包名称
-          zip -r -P "$ZIP_PASSWORD" archive.zip my_folder/
+          zip -r -P "$ZIP_PASSWORD" result.zip files/
 
       # 4. 将生成的 ZIP 文件上传为构建产物 (Artifact)，方便下载
       - name: Upload ZIP artifact
