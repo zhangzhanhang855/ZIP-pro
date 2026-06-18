@@ -1,0 +1,430 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JRmusic 沉浸版</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jsmediatags/3.9.5/jsmediatags.min.js"></script>
+    <style>
+        :root {
+            --bg-color: #2c2f33;
+            --text-color: #ffffff;
+            --highlight: #7289da;
+        }
+
+        body, html {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100%;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            overflow: hidden;
+            transition: background 1s ease;
+        }
+
+        /* 沉浸式容器与重低音模糊效果 */
+        #app-container {
+            display: flex;
+            width: 100%;
+            height: 100%;
+            transition: filter 0.1s ease-out;
+            position: relative;
+            z-index: 1;
+            background: inherit;
+        }
+
+        /* 触发重音时的瞬间模糊 */
+        .bass-hit {
+            filter: blur(15px) brightness(1.2);
+            transition: filter 0.05s ease-in !important;
+        }
+
+        /* 侧边栏列表 */
+        #sidebar {
+            width: 300px;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+            z-index: 10;
+        }
+
+        .list-header {
+            padding: 20px;
+            font-size: 1.2em;
+            font-weight: bold;
+            border-bottom: 1px solid rgba(255,255,255,0.1);
+        }
+
+        .item {
+            padding: 15px 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .item:hover { background: rgba(255, 255, 255, 0.1); }
+        .item.active { background: rgba(114, 137, 218, 0.5); }
+        
+        /* 播放主区域 */
+        #main-view {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            position: relative;
+            z-index: 10;
+        }
+
+        #lyrics-container {
+            height: 60%;
+            width: 80%;
+            overflow: hidden;
+            position: relative;
+            text-align: center;
+            mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%);
+            -webkit-mask-image: linear-gradient(to bottom, transparent 0%, black 20%, black 80%, transparent 100%);
+        }
+
+        #lyrics-scroll {
+            position: absolute;
+            top: 50%;
+            width: 100%;
+            transition: transform 0.3s ease-out;
+        }
+
+        .lyric-line {
+            padding: 10px;
+            font-size: 1.5em;
+            color: rgba(255, 255, 255, 0.5);
+            transition: all 0.3s;
+            min-height: 30px;
+        }
+
+        .lyric-line.active {
+            color: #fff;
+            font-size: 2em;
+            font-weight: bold;
+            text-shadow: 0 0 10px rgba(255,255,255,0.5);
+        }
+
+        /* 底部控制栏 */
+        #controls {
+            position: absolute;
+            bottom: 30px;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 60%;
+            background: rgba(0,0,0,0.3);
+            padding: 20px;
+            border-radius: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        audio {
+            width: 100%;
+            outline: none;
+            margin-bottom: 10px;
+        }
+
+        .btn-fullscreen {
+            padding: 8px 16px;
+            background: var(--highlight);
+            border: none;
+            color: white;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+    </style>
+</head>
+<body>
+
+<div id="app-container">
+    <div id="sidebar">
+        <div class="list-header" id="status-text">加载仓库中...</div>
+        <div id="list-content"></div>
+    </div>
+
+    <div id="main-view">
+        <div id="lyrics-container">
+            <div id="lyrics-scroll"></div>
+        </div>
+        
+        <div id="controls">
+            <audio id="audio-player" controls crossorigin="anonymous"></audio>
+            <button class="btn-fullscreen" onclick="toggleFullScreen()">进入全屏模式</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const REPO_OWNER = 'zhangzhanhang855';
+    const REPO_NAME = 'musiconly';
+    const API_BASE = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents`;
+    
+    const listContent = document.getElementById('list-content');
+    const statusText = document.getElementById('status-text');
+    const audioPlayer = document.getElementById('audio-player');
+    const lyricsScroll = document.getElementById('lyrics-scroll');
+    const appContainer = document.getElementById('app-container');
+    
+    let currentPath = ''; // 空代表根目录
+    let parsedLyrics = [];
+    let audioContext, analyser, dataArray;
+    let isVisualizerSetup = false;
+
+    // ================= 1. 仓库与播放列表解析 =================
+    async function fetchRepoContents(path = '') {
+        try {
+            statusText.innerText = path === '' ? "播放列表 (文件夹)" : `返回上一级`;
+            if (path === '') {
+                statusText.onclick = null;
+                statusText.style.cursor = 'default';
+            } else {
+                statusText.onclick = () => fetchRepoContents('');
+                statusText.style.cursor = 'pointer';
+            }
+
+            listContent.innerHTML = '<div style="padding:20px;">读取中...</div>';
+            const response = await fetch(`${API_BASE}/${path}`);
+            if (!response.ok) throw new Error('API Rate limit or Repo not found');
+            const data = await response.json();
+            
+            listContent.innerHTML = '';
+            data.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'item';
+                div.innerText = item.name;
+                
+                if (item.type === 'dir') {
+                    div.innerText = `📁 ${item.name}`;
+                    div.onclick = () => fetchRepoContents(item.path);
+                } else if (item.name.match(/\.(mp3|flac|wav|ogg)$/i)) {
+                    div.innerText = `🎵 ${item.name}`;
+                    div.onclick = () => playSong(item.download_url, item.name, div);
+                } else {
+                    return; // 忽略非音频非文件夹文件
+                }
+                listContent.appendChild(div);
+            });
+        } catch (error) {
+            listContent.innerHTML = `<div style="padding:20px; color:red;">读取失败: ${error.message}</div>`;
+        }
+    }
+
+    // ================= 2. 播放与ID3暴力解析 =================
+    async function playSong(url, name, element) {
+        document.querySelectorAll('.item').forEach(el => el.classList.remove('active'));
+        if (element) element.classList.add('active');
+
+        audioPlayer.src = url;
+        audioPlayer.play().then(() => {
+            setupVisualizer(); // 用户交互后才能启动 AudioContext
+        }).catch(e => console.log("等待用户交互后播放"));
+
+        generateSoftBackground();
+        fetchAndParseID3(url);
+
+        // 禁止自动切换下一首：监听 ended 事件并清空动作即可，无需额外逻辑
+        audioPlayer.onended = () => {
+            console.log("歌曲结束，停止播放（不自动切换下一首）");
+        };
+    }
+
+    function fetchAndParseID3(url) {
+        lyricsScroll.innerHTML = '<div class="lyric-line active">解析数据中...</div>';
+        parsedLyrics = [];
+
+        window.jsmediatags.read(url, {
+            onSuccess: function(tag) {
+                let lyricsText = "";
+                // 尝试暴力从不同标签寻找歌词 USLT, SYLT 或自定义 comments
+                if (tag.tags.USLT) {
+                    lyricsText = tag.tags.USLT.lyrics || tag.tags.USLT.text;
+                } else if (tag.tags.lyrics) {
+                    lyricsText = tag.tags.lyrics;
+                } else if (tag.tags.comment) {
+                    lyricsText = tag.tags.comment.text;
+                }
+                
+                parseLyricsString(lyricsText);
+            },
+            onError: function(error) {
+                console.log('ID3读取失败:', error.info);
+                displayPureMusic();
+            }
+        });
+    }
+
+    function parseLyricsString(text) {
+        if (!text || typeof text !== 'string') {
+            displayPureMusic();
+            return;
+        }
+
+        const regex = /\[(\d{2}):(\d{2})\.(\d{2,3})\](.*)/g;
+        let match;
+        parsedLyrics = [];
+
+        while ((match = regex.exec(text)) !== null) {
+            const minutes = parseInt(match[1]);
+            const seconds = parseInt(match[2]);
+            const milliseconds = parseInt(match[3]);
+            // 兼容2位或3位毫秒
+            const time = minutes * 60 + seconds + (milliseconds / (match[3].length === 3 ? 1000 : 100)); 
+            const lyric = match[4].trim();
+            if (lyric) {
+                parsedLyrics.push({ time, lyric });
+            }
+        }
+
+        if (parsedLyrics.length === 0) {
+            displayPureMusic();
+        } else {
+            renderLyrics();
+        }
+    }
+
+    function displayPureMusic() {
+        parsedLyrics = [];
+        lyricsScroll.innerHTML = '<div class="lyric-line active">纯音乐</div>';
+        lyricsScroll.style.transform = `translateY(0px)`;
+    }
+
+    function renderLyrics() {
+        lyricsScroll.innerHTML = '';
+        parsedLyrics.forEach((line, index) => {
+            const div = document.createElement('div');
+            div.className = 'lyric-line';
+            div.id = `line-${index}`;
+            div.innerText = line.lyric;
+            lyricsScroll.appendChild(div);
+        });
+    }
+
+    // 歌词滚动同步
+    audioPlayer.addEventListener('timeupdate', () => {
+        if (parsedLyrics.length === 0) return;
+        
+        const currentTime = audioPlayer.currentTime;
+        let activeIndex = -1;
+
+        for (let i = 0; i < parsedLyrics.length; i++) {
+            if (currentTime >= parsedLyrics[i].time) {
+                activeIndex = i;
+            } else {
+                break;
+            }
+        }
+
+        if (activeIndex !== -1) {
+            const lines = document.querySelectorAll('.lyric-line');
+            lines.forEach(l => l.classList.remove('active'));
+            
+            const activeLine = document.getElementById(`line-${activeIndex}`);
+            if (activeLine) {
+                activeLine.classList.add('active');
+                // 居中计算：每行大约50px高
+                const offset = activeLine.offsetTop - 150; 
+                lyricsScroll.style.transform = `translateY(-${offset}px)`;
+            }
+        }
+    });
+
+    // ================= 3. 实时重音解析 (Web Audio API) =================
+    function setupVisualizer() {
+        if (isVisualizerSetup) return;
+        
+        // 浏览器兼容
+        const AudioContext = window.AudioContext || window.webkitAudioContext;
+        audioContext = new AudioContext();
+        analyser = audioContext.createAnalyser();
+        
+        // 设置 FFT 大小，关注低频
+        analyser.fftSize = 256; 
+        const source = audioContext.createMediaElementSource(audioPlayer);
+        
+        source.connect(analyser);
+        analyser.connect(audioContext.destination);
+        
+        dataArray = new Uint8Array(analyser.frequencyBinCount);
+        isVisualizerSetup = true;
+        
+        analyzeBass();
+    }
+
+    function analyzeBass() {
+        requestAnimationFrame(analyzeBass);
+        if (!analyser || audioPlayer.paused) return;
+
+        analyser.getByteFrequencyData(dataArray);
+        
+        // 取前几个低频区间的平均能量 (大概 0 - 100Hz 的区域)
+        let bassSum = 0;
+        const bassEndBin = 4; 
+        for (let i = 0; i < bassEndBin; i++) {
+            bassSum += dataArray[i];
+        }
+        const bassAvg = bassSum / bassEndBin;
+
+        // 阈值测试：重低音达到阈值时触发瞬间模糊
+        if (bassAvg > 230) {
+            appContainer.classList.add('bass-hit');
+        } else {
+            // 迅速恢复
+            appContainer.classList.remove('bass-hit');
+        }
+    }
+
+    // ================= 4. 全屏模式与背景生成 =================
+    function generateSoftBackground() {
+        if (!document.fullscreenElement) {
+            document.body.style.background = 'var(--bg-color)';
+            return;
+        }
+        // 随机生成高明度、低饱和度的柔和色彩 (Pastel colors)
+        const r = Math.floor(Math.random() * 127) + 127;
+        const g = Math.floor(Math.random() * 127) + 127;
+        const b = Math.floor(Math.random() * 127) + 127;
+        
+        // 使用径向渐变模拟柔和的模糊背景光晕
+        document.body.style.background = `radial-gradient(circle at 50% 50%, rgb(${r}, ${g}, ${b}), #1a1a2e)`;
+    }
+
+    function toggleFullScreen() {
+        if (!document.fullscreenElement) {
+            document.documentElement.requestFullscreen().then(() => {
+                generateSoftBackground();
+                document.querySelector('.btn-fullscreen').innerText = "退出全屏";
+            });
+        } else {
+            if (document.exitFullscreen) {
+                document.exitFullscreen().then(() => {
+                    document.body.style.background = 'var(--bg-color)';
+                    document.querySelector('.btn-fullscreen').innerText = "进入全屏模式";
+                });
+            }
+        }
+    }
+
+    // 监听全屏状态变化，避免用户按 ESC 退出导致背景没切回来
+    document.addEventListener('fullscreenchange', () => {
+        if (!document.fullscreenElement) {
+            document.body.style.background = 'var(--bg-color)';
+            document.querySelector('.btn-fullscreen').innerText = "进入全屏模式";
+        } else {
+            generateSoftBackground();
+            document.querySelector('.btn-fullscreen').innerText = "退出全屏";
+        }
+    });
+
+    // 初始化加载根目录
+    fetchRepoContents();
+</script>
+</body>
+</html>
