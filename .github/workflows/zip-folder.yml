@@ -2,8 +2,6 @@ name: Compress Folder to Password-Protected ZIP
 
 on:
   workflow_dispatch: # 允许在 Actions 页面手动触发
-  # push:            # 如果需要每次代码提交自动打包，取消这两行的注释
-  #   branches: [ "main" ]
 
 jobs:
   zip-files:
@@ -21,14 +19,14 @@ jobs:
       # 3. 将目标文件夹压缩为带密码的 ZIP
       - name: Create password-protected ZIP
         run: |
-          # 请将 123456 替换为你想要的真实密码
-          # 请将 my_folder 替换为你要压缩的文件夹名称
-          zip -r -P "congcong2012" files/ archive.zip
+          # 注意顺序：先写生成的压缩包名(archive.zip)，再写要压缩的文件夹(files/)
+          zip -r -P "congcong2012" archive.zip files/
 
       # 4. 将生成的 ZIP 文件上传为产物，供下载
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: encrypted-archive
-          path: result/archive.zip
+          # 这里直接写 archive.zip，不要加 result/ 前缀，因为它就生成在根目录
+          path: archive.zip
           retention-days: 7 # 产物保留天数
