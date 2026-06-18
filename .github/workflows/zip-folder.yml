@@ -2,7 +2,7 @@ name: Compress Folder to Password-Protected ZIP
 
 on:
   workflow_dispatch: # 允许在 Actions 页面手动触发
-  # push:            # 如果你想在每次推送到 main 分支时自动触发，请取消下面两行的注释
+  # push:            # 如果需要每次代码提交自动打包，取消这两行的注释
   #   branches: [ "main" ]
 
 jobs:
@@ -14,20 +14,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # 2. 安装 zip 工具 (Ubuntu 默认通常已安装，但显式安装可防万一)
+      # 2. 安装 zip 工具
       - name: Install zip utility
         run: sudo apt-get update && sudo apt-get install -y zip
 
       # 3. 将目标文件夹压缩为带密码的 ZIP
       - name: Create password-protected ZIP
-        env:
-          ZIP_PASSWORD: ${{ secrets.ZIP_PASSWORD }} # 从 GitHub Secrets 读取密码
         run: |
-          # 替换 'my_folder' 为你要压缩的真实文件夹名称
-          # 替换 'archive.zip' 为你期望的压缩包名称
-          zip -r -P "$ZIP_PASSWORD" result.zip files/
+          # 请将 123456 替换为你想要的真实密码
+          # 请将 my_folder 替换为你要压缩的文件夹名称
+          zip -r -P "congcong2012" result.zip files/
 
-      # 4. 将生成的 ZIP 文件上传为构建产物 (Artifact)，方便下载
+      # 4. 将生成的 ZIP 文件上传为产物，供下载
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
