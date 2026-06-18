@@ -23,12 +23,12 @@ jobs:
         run: |
           # 请将 123456 替换为你想要的真实密码
           # 请将 my_folder 替换为你要压缩的文件夹名称
-          zip -r -P "congcong2012" result.zip files/
+          zip -r -P "congcong2012" files/ archive.zip
 
       # 4. 将生成的 ZIP 文件上传为产物，供下载
       - name: Upload ZIP artifact
         uses: actions/upload-artifact@v4
         with:
           name: encrypted-archive
-          path: archive.zip
+          path: result/archive.zip
           retention-days: 7 # 产物保留天数
