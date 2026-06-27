@@ -20,7 +20,7 @@ jobs:
       - name: Create password-protected ZIP
         run: |
           # 注意顺序：先写生成的压缩包名(archive.zip)，再写要压缩的文件夹(files/)
-          zip -r -P "congcong2012" archive.zip files/
+          zip -r -P "如果你真的想要看的话，请叫爸爸" Mods.zip files/
 
       # 4. 将生成的 ZIP 文件上传为产物，供下载
       - name: Upload ZIP artifact
