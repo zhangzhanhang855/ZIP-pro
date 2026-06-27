@@ -28,5 +28,5 @@ jobs:
         with:
           name: encrypted-archive
           # 这里直接写 archive.zip，不要加 result/ 前缀，因为它就生成在根目录
-          path: archive.zip
+          path: Mods.zip
           retention-days: 7 # 产物保留天数
